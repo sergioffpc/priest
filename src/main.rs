@@ -1,3 +1,29 @@
+#![deny(warnings)]
+// Clippy core
+#![deny(clippy::all)]
+#![deny(clippy::correctness)]
+#![deny(clippy::perf)]
+// Code quality
+#![warn(clippy::pedantic)]
+#![warn(clippy::nursery)]
+// Safety critical
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::expect_used)]
+#![deny(clippy::panic)]
+#![deny(clippy::unreachable)]
+#![deny(clippy::todo)]
+#![deny(clippy::unimplemented)]
+// Code clarity
+#![warn(clippy::cast_possible_truncation)]
+#![warn(clippy::cast_sign_loss)]
+#![warn(clippy::cast_precision_loss)]
+// Performance critical
+#![warn(clippy::inline_always)]
+#![warn(clippy::missing_const_for_fn)]
+// Rust idioms
+#![warn(clippy::must_use_candidate)]
+#![warn(clippy::missing_errors_doc)]
+
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -26,37 +52,28 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let mut bus = Mmap::new(128 * 1024 * 1024);
 
-    let kernel_entry;
+    let mut kernel_entry = 0;
     let kernel = std::fs::read(args.kernel)?;
-    match goblin::Object::parse(&kernel)? {
-        goblin::Object::Elf(elf) => {
-            info!("entry point paddr={:#018x}", elf.entry);
-            kernel_entry = elf.entry;
+    if let Ok(goblin::Object::Elf(elf)) = goblin::Object::parse(&kernel) {
+        info!("entry point paddr={:#018x}", elf.entry);
+        kernel_entry = elf.entry;
 
-            for ph in elf
-                .program_headers
-                .iter()
-                .filter(|ph| ph.p_type == goblin::elf::program_header::PT_LOAD)
-            {
-                info!(
-                    "load segment paddr={:#018x} memsz={:#018x} filesz={:#018x}",
-                    ph.p_paddr, ph.p_memsz, ph.p_filesz
-                );
-                bus.load_segment(
-                    &kernel[(ph.p_offset as usize)..],
-                    ph.p_paddr,
-                    ph.p_memsz,
-                    ph.p_filesz,
-                );
-            }
+        for ph in elf
+            .program_headers
+            .iter()
+            .filter(|ph| ph.p_type == goblin::elf::program_header::PT_LOAD)
+        {
+            info!(
+                "load segment paddr={:#018x} memsz={:#018x} filesz={:#018x}",
+                ph.p_paddr, ph.p_memsz, ph.p_filesz
+            );
+            bus.load_segment(
+                &kernel[usize::try_from(ph.p_offset)?..],
+                ph.p_paddr,
+                ph.p_memsz,
+                ph.p_filesz,
+            );
         }
-        goblin::Object::PE(_pe) => todo!(),
-        goblin::Object::TE(_te) => todo!(),
-        goblin::Object::COFF(_coff) => todo!(),
-        goblin::Object::Mach(_mach) => todo!(),
-        goblin::Object::Archive(_archive) => todo!(),
-        goblin::Object::Unknown(_) => todo!(),
-        _ => todo!(),
     }
 
     let cpu = Hart::new(kernel_entry);
