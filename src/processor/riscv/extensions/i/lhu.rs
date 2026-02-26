@@ -36,3 +36,76 @@ impl InstrExec for Lhu {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        memory::mmap::Mmap,
+        processor::riscv::{hart::Hart, instruction::InstrExec},
+    };
+
+    fn encode_lhu(rd: u32, rs1: u32, imm: i16) -> u32 {
+        let imm12 = (imm as u32) & 0xfff;
+        (imm12 << 20) | (rs1 << 15) | (0b101 << 12) | (rd << 7) | 0b0000011
+    }
+
+    fn setup() -> (Hart, Mmap) {
+        (Hart::new(0), Mmap::new(0x0, 0x10_0000))
+    }
+
+    fn exec(inst: u32, hart: &mut Hart, bus: &mut Mmap) {
+        Lhu.call(inst, hart, bus)
+            .expect("LHU execution unexpectedly trapped");
+    }
+
+    #[test]
+    fn lhu_basic() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x100);
+        bus.write16(0x100, 0x7fff).unwrap();
+
+        exec(encode_lhu(2, 1, 0), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(2), 0x7fff);
+    }
+
+    #[test]
+    fn lhu_high_bits() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x200);
+        bus.write16(0x200, 0x8000).unwrap(); // unsigned 32768
+
+        exec(encode_lhu(2, 1, 0), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(2), 0x8000);
+    }
+
+    #[test]
+    fn lhu_with_offset() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x300);
+        bus.write16(0x304, 0x1234).unwrap();
+
+        exec(encode_lhu(2, 1, 4), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(2), 0x1234);
+    }
+
+    #[test]
+    fn lhu_rd_x0() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x400);
+        bus.write16(0x400, 0x5678).unwrap();
+
+        exec(encode_lhu(0, 1, 0), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(0), 0);
+    }
+
+    #[test]
+    fn lhu_negative_offset() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x500);
+        bus.write16(0x4fc, 0x9abc).unwrap();
+
+        exec(encode_lhu(2, 1, -4), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(2), 0x9abc);
+    }
+}

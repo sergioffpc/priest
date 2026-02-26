@@ -36,3 +36,76 @@ impl InstrExec for Lwu {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        memory::mmap::Mmap,
+        processor::riscv::{hart::Hart, instruction::InstrExec},
+    };
+
+    fn encode_lwu(rd: u32, rs1: u32, imm: i16) -> u32 {
+        let imm12 = (imm as u32) & 0xfff;
+        (imm12 << 20) | (rs1 << 15) | (0b110 << 12) | (rd << 7) | 0b0000011
+    }
+
+    fn setup() -> (Hart, Mmap) {
+        (Hart::new(0), Mmap::new(0x0, 0x10_0000))
+    }
+
+    fn exec(inst: u32, hart: &mut Hart, bus: &mut Mmap) {
+        Lwu.call(inst, hart, bus)
+            .expect("LWU execution unexpectedly trapped");
+    }
+
+    #[test]
+    fn lwu_basic() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x100);
+        bus.write32(0x100, 0x12345678).unwrap();
+
+        exec(encode_lwu(2, 1, 0), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(2), 0x12345678); // zero-extend
+    }
+
+    #[test]
+    fn lwu_high_bit() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x200);
+        bus.write32(0x200, 0xdeadbeef).unwrap();
+
+        exec(encode_lwu(2, 1, 0), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(2), 0x00000000DEADBEEF); // zero-extend
+    }
+
+    #[test]
+    fn lwu_with_offset() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x300);
+        bus.write32(0x304, 0x89abcdef).unwrap();
+
+        exec(encode_lwu(2, 1, 4), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(2), 0x0000000089ABCDEF);
+    }
+
+    #[test]
+    fn lwu_rd_x0() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x400);
+        bus.write32(0x400, 0x87654321).unwrap();
+
+        exec(encode_lwu(0, 1, 0), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(0), 0);
+    }
+
+    #[test]
+    fn lwu_negative_offset() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x500);
+        bus.write32(0x4fc, 0xabcdef12).unwrap();
+
+        exec(encode_lwu(2, 1, -4), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(2), 0x00000000ABCDEF12); // zero-extend
+    }
+}

@@ -34,3 +34,68 @@ impl InstrExec for Sh {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        memory::mmap::Mmap,
+        processor::riscv::{hart::Hart, instruction::InstrExec},
+    };
+
+    fn encode_sh(rs1: u32, rs2: u32, imm: i16) -> u32 {
+        let imm12 = (imm as u32) & 0xfff;
+        let imm_11_5 = (imm12 >> 5) & 0x7f;
+        let imm_4_0 = imm12 & 0x1f;
+        (imm_11_5 << 25) | (rs2 << 20) | (rs1 << 15) | (0b001 << 12) | (imm_4_0 << 7) | 0b0100011
+    }
+
+    fn setup() -> (Hart, Mmap) {
+        (Hart::new(0), Mmap::new(0x0, 0x10_0000))
+    }
+
+    fn exec(inst: u32, hart: &mut Hart, bus: &mut Mmap) {
+        Sh.call(inst, hart, bus)
+            .expect("SH execution unexpectedly trapped");
+    }
+
+    #[test]
+    fn sh_basic() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x100);
+        hart.set_xreg(2, 0xABCD);
+
+        exec(encode_sh(1, 2, 0), &mut hart, &mut bus);
+        assert_eq!(bus.read16(0x100).unwrap(), 0xABCD);
+    }
+
+    #[test]
+    fn sh_with_offset() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x200);
+        hart.set_xreg(2, 0x1234);
+
+        exec(encode_sh(1, 2, 4), &mut hart, &mut bus);
+        assert_eq!(bus.read16(0x204).unwrap(), 0x1234);
+    }
+
+    #[test]
+    fn sh_negative_offset() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x300);
+        hart.set_xreg(2, 0x5678);
+
+        exec(encode_sh(1, 2, -4), &mut hart, &mut bus);
+        assert_eq!(bus.read16(0x2FC).unwrap(), 0x5678);
+    }
+
+    #[test]
+    fn sh_zero_value() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x400);
+        hart.set_xreg(2, 0);
+
+        exec(encode_sh(1, 2, 0), &mut hart, &mut bus);
+        assert_eq!(bus.read16(0x400).unwrap(), 0);
+    }
+}

@@ -34,3 +34,65 @@ impl InstrExec for Xor {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::mmap::Mmap;
+    use crate::processor::riscv::hart::Hart;
+
+    fn setup() -> (Hart, Mmap) {
+        (Hart::new(0), Mmap::new(0x0, 0x10_0000))
+    }
+
+    fn encode_xor(rd: usize, rs1: usize, rs2: usize) -> u32 {
+        ((0b0000000) << 25)
+            | ((rs2 as u32) << 20)
+            | ((rs1 as u32) << 15)
+            | (0b100 << 12)
+            | ((rd as u32) << 7)
+            | 0b0110011
+    }
+
+    fn exec(inst: u32, hart: &mut Hart, bus: &mut Mmap) {
+        let instr = Xor;
+        instr
+            .call(inst, hart, bus)
+            .expect("XOR execution unexpectedly trapped");
+    }
+
+    #[test]
+    fn xor_basic() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0b1010);
+        hart.set_xreg(2, 0b1100);
+        exec(encode_xor(3, 1, 2), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(3), 0b0110);
+    }
+
+    #[test]
+    fn xor_zero() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0);
+        hart.set_xreg(2, 0);
+        exec(encode_xor(3, 1, 2), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(3), 0);
+    }
+
+    #[test]
+    fn xor_self() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0b1111);
+        exec(encode_xor(1, 1, 1), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(1), 0);
+    }
+
+    #[test]
+    fn xor_large_values() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0xffff_ffff_0000_0000);
+        hart.set_xreg(2, 0x0000_ffff_ffff_0000);
+        exec(encode_xor(3, 1, 2), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(3), 0xffff_0000_ffff_0000);
+    }
+}

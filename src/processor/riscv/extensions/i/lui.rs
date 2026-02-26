@@ -31,3 +31,53 @@ impl InstrExec for Lui {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        memory::mmap::Mmap,
+        processor::riscv::{hart::Hart, instruction::InstrExec},
+    };
+
+    fn encode_lui(rd: u32, imm: u32) -> u32 {
+        (imm << 12) | (rd << 7) | 0b0110111
+    }
+
+    fn setup() -> (Hart, Mmap) {
+        (Hart::new(0), Mmap::new(0x0, 0x10_0000))
+    }
+
+    fn exec(inst: u32, hart: &mut Hart, bus: &mut Mmap) {
+        Lui.call(inst, hart, bus)
+            .expect("LUI execution unexpectedly trapped");
+    }
+
+    #[test]
+    fn lui_basic() {
+        let (mut hart, mut bus) = setup();
+        exec(encode_lui(1, 0x12345), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(1), 0x12345000);
+    }
+
+    #[test]
+    fn lui_rd_x0() {
+        let (mut hart, mut bus) = setup();
+        exec(encode_lui(0, 0xABCDE), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(0), 0);
+    }
+
+    #[test]
+    fn lui_max_value() {
+        let (mut hart, mut bus) = setup();
+        exec(encode_lui(2, 0xfffff), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(2), 0xfffff000);
+    }
+
+    #[test]
+    fn lui_zero_value() {
+        let (mut hart, mut bus) = setup();
+        exec(encode_lui(3, 0), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(3), 0);
+    }
+}

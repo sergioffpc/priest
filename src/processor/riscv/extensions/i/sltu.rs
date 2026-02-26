@@ -38,3 +38,78 @@ impl InstrExec for Sltu {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::mmap::Mmap;
+    use crate::processor::riscv::hart::Hart;
+
+    fn setup() -> (Hart, Mmap) {
+        (Hart::new(0), Mmap::new(0x0, 0x10_0000))
+    }
+
+    fn encode_sltu(rd: usize, rs1: usize, rs2: usize) -> u32 {
+        ((rs2 as u32) << 20) | ((rs1 as u32) << 15) | (0b011 << 12) | ((rd as u32) << 7) | 0b0110011
+    }
+
+    fn exec(inst: u32, hart: &mut Hart, bus: &mut Mmap) {
+        let instr = Sltu;
+        instr
+            .call(inst, hart, bus)
+            .expect("SLTU execution unexpectedly trapped");
+    }
+
+    #[test]
+    fn sltu_true() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 5);
+        hart.set_xreg(2, 10);
+        exec(encode_sltu(3, 1, 2), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(3), 1);
+    }
+
+    #[test]
+    fn sltu_false() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 10);
+        hart.set_xreg(2, 5);
+        exec(encode_sltu(3, 1, 2), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(3), 0);
+    }
+
+    #[test]
+    fn sltu_equal() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 7);
+        hart.set_xreg(2, 7);
+        exec(encode_sltu(3, 1, 2), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(3), 0);
+    }
+
+    #[test]
+    fn sltu_signed_vs_unsigned() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, (-1i64) as u64);
+        hart.set_xreg(2, 1);
+        exec(encode_sltu(3, 1, 2), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(3), 0);
+    }
+
+    #[test]
+    fn sltu_unsigned_wrap() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0);
+        hart.set_xreg(2, u64::MAX);
+        exec(encode_sltu(3, 1, 2), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(3), 1);
+    }
+
+    #[test]
+    fn sltu_self() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 123456);
+        exec(encode_sltu(1, 1, 1), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(1), 0);
+    }
+}

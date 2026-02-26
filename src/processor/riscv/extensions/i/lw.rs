@@ -36,3 +36,66 @@ impl InstrExec for Lw {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        memory::mmap::Mmap,
+        processor::riscv::{hart::Hart, instruction::InstrExec},
+    };
+
+    fn encode_lw(rd: u32, rs1: u32, imm: i16) -> u32 {
+        let imm12 = (imm as u32) & 0xfff;
+        (imm12 << 20) | (rs1 << 15) | (0b010 << 12) | (rd << 7) | 0b0000011
+    }
+
+    fn setup() -> (Hart, Mmap) {
+        (Hart::new(0), Mmap::new(0x0, 0x10_0000))
+    }
+
+    fn exec(inst: u32, hart: &mut Hart, bus: &mut Mmap) {
+        Lw.call(inst, hart, bus)
+            .expect("LW execution unexpectedly trapped");
+    }
+
+    #[test]
+    fn lw_basic() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x100);
+        bus.write32(0x100, 0x12345678).unwrap();
+
+        exec(encode_lw(2, 1, 0), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(2), 0x12345678);
+    }
+
+    #[test]
+    fn lw_with_offset() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x200);
+        bus.write32(0x204, 0xdeadbeef).unwrap();
+
+        exec(encode_lw(2, 1, 4), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(2), 0xffffffffdeadbeef);
+    }
+
+    #[test]
+    fn lw_rd_x0() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x300);
+        bus.write32(0x300, 0xabcdef12).unwrap();
+
+        exec(encode_lw(0, 1, 0), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(0), 0);
+    }
+
+    #[test]
+    fn lw_negative_offset() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x400);
+        bus.write32(0x3fc, 0x11223344).unwrap();
+
+        exec(encode_lw(2, 1, -4), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(2), 0x11223344);
+    }
+}

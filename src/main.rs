@@ -50,7 +50,7 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
-    let mut bus = Mmap::new(128 * 1024 * 1024);
+    let mut bus = Mmap::new(0x8000_0000, 0x800_0000);
 
     let mut kernel_entry = 0;
     let kernel = std::fs::read(args.kernel)?;

@@ -7,12 +7,10 @@ pub struct Mmap {
 }
 
 impl Mmap {
-    const RAM_START_ADDR: u64 = 0x8000_0000;
-
-    pub fn new(size: usize) -> Self {
+    pub fn new(origin: u64, length: usize) -> Self {
         Self {
-            ram: MemoryBuffer::new(size),
-            ram_start: Self::RAM_START_ADDR,
+            ram: MemoryBuffer::new(length),
+            ram_start: origin,
         }
     }
 

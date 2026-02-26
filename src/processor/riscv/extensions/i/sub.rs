@@ -34,3 +34,74 @@ impl InstrExec for Sub {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::mmap::Mmap;
+    use crate::processor::riscv::hart::Hart;
+
+    fn setup() -> (Hart, Mmap) {
+        (Hart::new(0), Mmap::new(0x0, 0x10_0000))
+    }
+
+    fn encode_sub(rd: usize, rs1: usize, rs2: usize) -> u32 {
+        (0b0100000 << 25)
+            | ((rs2 as u32) << 20)
+            | ((rs1 as u32) << 15)
+            | (0b000 << 12)
+            | ((rd as u32) << 7)
+            | 0b0110011
+    }
+
+    fn exec(inst: u32, hart: &mut Hart, bus: &mut Mmap) {
+        let instr = Sub;
+        instr
+            .call(inst, hart, bus)
+            .expect("SUB execution unexpectedly trapped");
+    }
+
+    #[test]
+    fn sub_basic() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 10);
+        hart.set_xreg(2, 4);
+        exec(encode_sub(3, 1, 2), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(3), 6);
+    }
+
+    #[test]
+    fn sub_zero() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 5);
+        hart.set_xreg(2, 5);
+        exec(encode_sub(3, 1, 2), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(3), 0);
+    }
+
+    #[test]
+    fn sub_negative_result() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 4);
+        hart.set_xreg(2, 10);
+        exec(encode_sub(3, 1, 2), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(3), 4u64.wrapping_sub(10));
+    }
+
+    #[test]
+    fn sub_self() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 42);
+        exec(encode_sub(1, 1, 1), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(1), 0);
+    }
+
+    #[test]
+    fn sub_large_values() {
+        let (mut hart, mut bus) = setup();
+        hart.set_xreg(1, 0x8000000000000000);
+        hart.set_xreg(2, 0x7fffffffffffffff);
+        exec(encode_sub(3, 1, 2), &mut hart, &mut bus);
+        assert_eq!(hart.xreg(3), 1);
+    }
+}
